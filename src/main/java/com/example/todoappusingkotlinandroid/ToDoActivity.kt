@@ -16,11 +16,13 @@ import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.todoappusingkotlinandroid.data.Todo
+import com.example.todoappusingkotlinandroid.data.TodoManager
 
 class ToDoActivity : AppCompatActivity() {
     private lateinit var binding: ActivityToDoBinding
     private lateinit var adapter: TodoAdapter
-    private val todos = mutableListOf<Todo>()
+    // REMOVED: private val todos = mutableListOf<Todo>()
+    // NOW USING: TodoManager.todos for shared state management
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,14 +57,25 @@ class ToDoActivity : AppCompatActivity() {
         // Connect the adapter to the RecyclerView
         rv.adapter = adapter
 
-        // FIXED: Submit initial empty list to adapter (moved after adapter initialization)
-        adapter.submitList(todos.toList())
+        // FIXED: Load todos from TodoManager and submit to adapter
+        loadTodosFromManager()
 
         // Navigation button to go back to MainActivity
         binding.button3.setOnClickListener {
             startActivity(
                 Intent(this, MainActivity::class.java)
             )
+        }
+        // FIXED: Add error handling for navigation to GeneralScreen
+        binding.button4.setOnClickListener {
+            try {
+                val intent = Intent(this, GeneralScreen::class.java)
+                startActivity(intent)
+            } catch (e: Exception) {
+                // Handle the error gracefully
+                Toast.makeText(this, "Error opening General Screen: ${e.message}", Toast.LENGTH_LONG).show()
+                e.printStackTrace()
+            }
         }
 
 
@@ -89,12 +102,12 @@ class ToDoActivity : AppCompatActivity() {
                             description = desc
                         )
                         
-                        // Add to the mutable list
-                        todos.add(newTodo)
+                        // FIXED: Add to TodoManager instead of local list
+                        TodoManager.addTodo(newTodo)
                         
-                        // IMPORTANT: Update the adapter with the new list
-                        // This will trigger the RecyclerView to refresh and show the new item
-                        adapter.submitList(todos.toList())
+                        // IMPORTANT: Update the adapter with todos from manager
+                        // This ensures state is maintained across activities
+                        adapter.submitList(TodoManager.todos)
                         
                         Toast.makeText(this, "Todo added successfully!", Toast.LENGTH_SHORT).show()
                         d.dismiss()
@@ -112,17 +125,21 @@ class ToDoActivity : AppCompatActivity() {
         }
     }
 
-    // FIXED: Proper delete function with ListAdapter
+    // FIXED: Use TodoManager for delete operation
     private fun deleteTodo(todo: Todo) {
-        // Remove from the mutable list
-        todos.remove(todo)
+        // Remove from TodoManager (maintains state across activities)
+        val deleted = TodoManager.deleteTodo(todo)
         
-        // IMPORTANT: Use submitList() with ListAdapter, not notifyDataSetChanged()
-        // Create a new list copy to trigger DiffUtil comparison
-        adapter.submitList(todos.toList())
-        
-        // Show confirmation to user
-        Toast.makeText(this, "Todo '${todo.title}' deleted", Toast.LENGTH_SHORT).show()
+        if (deleted) {
+            // Update the adapter with the current todos from manager
+            adapter.submitList(TodoManager.todos)
+            
+            // Show confirmation to user
+            Toast.makeText(this, "Todo '${todo.title}' deleted", Toast.LENGTH_SHORT).show()
+        } else {
+            // Handle error case
+            Toast.makeText(this, "Error deleting todo", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // FIXED: Proper edit function that UPDATES existing todo instead of creating new one
@@ -145,28 +162,24 @@ class ToDoActivity : AppCompatActivity() {
 
                 // Validate input before updating
                 if (title.isNotEmpty()) {
-                    // FIXED: Find the existing todo in the list and update it
-                    val todoIndex = todos.indexOfFirst { it.id == todo.id }
+                    // FIXED: Use TodoManager to update the todo
+                    val updatedTodo = Todo(
+                        id = todo.id,  // IMPORTANT: Keep the same ID!
+                        title = title,
+                        description = desc
+                    )
                     
-                    if (todoIndex != -1) {
-                        // Create updated todo with SAME ID but new data
-                        val updatedTodo = Todo(
-                            id = todo.id,  // IMPORTANT: Keep the same ID!
-                            title = title,
-                            description = desc
-                        )
-                        
-                        // Replace the old todo with the updated one at the same position
-                        todos[todoIndex] = updatedTodo
-                        
-                        // Update the adapter with the modified list
-                        // This will trigger DiffUtil to detect the content change
-                        adapter.submitList(todos.toList())
+                    // Update through TodoManager (maintains state across activities)
+                    val updated = TodoManager.updateTodo(updatedTodo)
+                    
+                    if (updated) {
+                        // Update the adapter with the modified list from manager
+                        adapter.submitList(TodoManager.todos)
                         
                         Toast.makeText(this, "Todo '${title}' updated successfully!", Toast.LENGTH_SHORT).show()
                         d.dismiss()
                     } else {
-                        // This shouldn't happen, but handle the error case
+                        // Handle error case
                         Toast.makeText(this, "Error: Todo not found", Toast.LENGTH_SHORT).show()
                     }
                 } else {
@@ -181,7 +194,28 @@ class ToDoActivity : AppCompatActivity() {
 
         dialog.show()
     }
+
+    // FIXED: Helper method to load todos from TodoManager
+    private fun loadTodosFromManager() {
+        // Get todos from the shared TodoManager and submit to adapter
+        adapter.submitList(TodoManager.todos)
+        
+        // Optional: Add change listener to automatically update when todos change
+        // This ensures UI stays in sync if todos are modified from other activities
+        TodoManager.addChangeListener {
+            runOnUiThread {
+                adapter.submitList(TodoManager.todos)
+            }
+        }
     }
+
+    override fun onResume() {
+        super.onResume()
+        // IMPORTANT: Refresh todos when returning to this activity
+        // This ensures we see any changes made in other activities
+        loadTodosFromManager()
+    }
+}
 
 
 

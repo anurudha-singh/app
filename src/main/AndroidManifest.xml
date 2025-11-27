@@ -12,6 +12,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ToDoAppUsingKotlinAndroid">
         <activity
+            android:name=".GeneralScreen"
+            android:exported="false" />
+        <activity
             android:name=".ToDoActivity"
             android:exported="false" />
         <activity
